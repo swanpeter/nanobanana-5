@@ -347,9 +347,39 @@ def _get_from_container(container: object, key: str) -> Optional[Any]:
         return None
 
 
+def sanitize_filename_component(value: str, max_length: int = 80) -> str:
+    text = value or ""
+    sanitized_chars: List[str] = []
+    for char in text:
+        if char in {"\n", "\r"}:
+            sanitized_chars.append("-n-")
+            continue
+        if ord(char) < 32:
+            continue
+        if char in {'\\', '/', ':', '*', '?', '"', '<', '>', '|'}:
+            continue
+        if char.isspace():
+            sanitized_chars.append("_")
+            continue
+        sanitized_chars.append(char)
+    sanitized = "".join(sanitized_chars).strip("_")
+    if not sanitized:
+        sanitized = "prompt"
+    if len(sanitized) > max_length:
+        sanitized = sanitized[:max_length]
+    return sanitized
+
+
+def build_prompt_based_filename(prompt_text: str) -> str:
+    prompt_component = sanitize_filename_component(prompt_text or "prompt", max_length=80)
+    unique_suffix = uuid.uuid4().hex
+    return f"user05_{prompt_component}_{unique_suffix}.png"
+
+
 def upload_image_to_gcs(
     image_bytes: bytes,
     filename_prefix: str = "gemini_image",
+    object_name: Optional[str] = None,
 ) -> Tuple[Optional[str], Optional[str]]:
     if not image_bytes:
         return None, None
@@ -409,8 +439,15 @@ def upload_image_to_gcs(
             project=str(project_id) if project_id else None,
         )
         bucket = storage_client.bucket(str(bucket_name))
-        timestamp = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        filename = f"images/{filename_prefix}_{timestamp}_{uuid.uuid4().hex}.png"
+        if object_name:
+            cleaned_object_name = object_name.strip()
+            if not cleaned_object_name.lower().endswith(".png"):
+                cleaned_object_name = f"{cleaned_object_name}.png"
+            cleaned_object_name = cleaned_object_name.replace("/", "_").replace("\\", "_")
+            filename = f"images/{cleaned_object_name}"
+        else:
+            timestamp = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            filename = f"images/{filename_prefix}_{timestamp}_{uuid.uuid4().hex}.png"
         blob = bucket.blob(filename)
         blob.upload_from_file(io.BytesIO(image_bytes), content_type="image/png")
 
@@ -696,9 +733,10 @@ def main() -> None:
             st.error("画像データを取得できませんでした。")
             st.stop()
 
-        upload_image_to_gcs(image_bytes)
-
         user_prompt = prompt.strip()
+        object_name = build_prompt_based_filename(user_prompt)
+        upload_image_to_gcs(image_bytes, object_name=object_name)
+
         st.session_state.history.insert(
             0,
             {
