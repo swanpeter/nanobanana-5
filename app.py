@@ -713,7 +713,7 @@ def main() -> None:
                     contents=prompt_for_request,
                     config=types.GenerateContentConfig(
                         response_modalities=["TEXT", "IMAGE"],
-                        image_config=types.ImageConfig(aspect_ratio=IMAGE_ASPECT_RATIO)
+                        image_config=types.ImageConfig(aspect_ratio=IMAGE_ASPECT_RATIO),
                     ),
                 )
             except google_exceptions.ResourceExhausted:
